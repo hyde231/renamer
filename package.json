@@ -1,0 +1,64 @@
+{
+  "name": "porn-renamer",
+  "description": "A cli to rename your porn files using http://metadataapi.net",
+  "version": "0.0.1",
+  "author": "ChalupaBatMan",
+  "bin": {
+    "porn-renamer": "./bin/run"
+  },
+  "bugs": "https://github.com/theporndb/renamer/issues",
+  "dependencies": {
+    "@oclif/command": "^1",
+    "@oclif/config": "^1",
+    "@oclif/plugin-help": "^2",
+    "@types/rimraf": "^2.0.3",
+    "axios": "^0.19.0",
+    "cli-ux": "^5.4.1",
+    "inquirer": "^7.0.1",
+    "pkg": "^4.4.2",
+    "tslib": "^1",
+    "xmlbuilder": "^13.0.2"
+  },
+  "devDependencies": {
+    "@oclif/dev-cli": "^1",
+    "@types/node": "^10",
+    "eslint": "^5.13",
+    "eslint-config-oclif": "^3.1",
+    "eslint-config-oclif-typescript": "^0.1",
+    "rimraf": "^3.0.0",
+    "ts-node": "^8",
+    "typescript": "^3.3"
+  },
+  "engines": {
+    "node": ">=8.0.0"
+  },
+  "files": [
+    "/bin",
+    "/lib"
+  ],
+  "homepage": "https://github.com/theporndb/renamer",
+  "keywords": [
+    "oclif"
+  ],
+  "license": "MIT",
+  "main": "lib/index.js",
+  "oclif": {
+    "bin": "porn-renamer"
+  },
+  "repository": "theporndb/renamer",
+  "scripts": {
+    "posttest": "eslint . --ext .ts --config .eslintrc",
+    "prepack": "rimraf lib && tsc -b && oclif-dev readme",
+    "test": "echo NO TESTS",
+    "version": "oclif-dev readme && git add README.md"
+  },
+  "types": "lib/index.d.ts",
+  "pkg": {
+    "scripts": "./lib/*.js",
+    "targets": [
+      "node10-linux-x64",
+      "node10-macos-x64",
+      "node10-win-x64"
+    ]
+  }
+}
