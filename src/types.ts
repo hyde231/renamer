@@ -32,3 +32,5 @@ type Background = {
     medium: string
     small: string
 }
+
+export {Background, Scene, Performer, Site, Tag};

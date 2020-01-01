@@ -2,51 +2,20 @@ import axios from "axios";
 import {cli} from "cli-ux";
 import walk from "./walk";
 
+const {version} = require("../package.json");
+const https = require("https");
 const program = require("commander");
 const builder = require("xmlbuilder");
-const util = require("util");
 const path = require("path");
 const inquirer = require("inquirer");
 const fs = require("fs");
 const mkdirp = require("mkdirp");
 const stringFormat = require("string-template");
-require("./types");
+const clc = require("cli-color");
+import {Scene} from "./types";
 
-type Performer = {
-    name: string
-    image: string
-    id: string
-}
-type Site = {
-    name: string
-    id: string
-}
-type Tag = {
-    id: number
-    tag: string
-}
-type Scene = {
-    id: string
-    title: string
-    description: string
-    site_id: number
-    date: string
-    url: string
-    poster: string
-    background: Background,
-    created: string
-    last_updated: string
-    performers: Array<Performer>
-    site: Site
-    tags: Array<Tag>
-}
 
-type Background = {
-    large: string
-    medium: string
-    small: string
-}
-
+const API_URL = "https://metadataapi.net";
 
 class PornRenamer {
     private program: any;
@@ -55,41 +24,55 @@ class PornRenamer {
         this.program = program;
     }
 
+    async warn(text: string) {
+        console.log(clc.yellow("WARN: ") + text);
+    }
+
+    async error(text: string) {
+        console.log(clc.red("ERROR: ") + text);
+    }
+
+    async info(text: string) {
+        console.log(clc.cyan("INFO: ") + text);
+    }
+
+    async success(text: string) {
+        console.log(clc.green("SUCCESS: ") + text);
+    }
+
     async run() {
         const dir = this.program.directory;
         const files: Array<string> = [];
-        await walk(dir, [".mkv", "avi", "wmv", "mp4"], async (file: string) => {
-            files.push(file);
+
+        cli.action.start("Scanning Folders");
+
+        await walk(dir, [".mkv", ".avi", ".wmv", ".mp4"], async (file: string) => {
+            if (!/sample/.test(file)) {
+                files.push(file);
+            }
         });
 
+        cli.action.stop("Found " + files.length + " files");
+
         if (files.length === 0) {
-            cli.error("No files found, exiting");
-            cli.exit();
+            this.error("No files found, exiting");
+            return;
         }
+
+        const progressBar = cli.progress();
+        progressBar.start(files.length, 0);
 
         for (const file of files) {
 
             let searchTerm: string = "";
+            const pathInfo = path.parse(file);
+            searchTerm = file.replace(dir, "").replace("\\", "/");
 
-            if (/([A-Za-z0-9- ]+?)\W+?(\d+\.\d+\.\d+)\W+?(.+?)\W+?XXX/.test(file)) {
-                const match = file.match(/([A-Za-z0-9- ]+?)\W+?(\d+\.\d+\.\d+)\W+?(.+?)\W+?XXX/);
-                if (match) {
-                    searchTerm = match[1] + " " + match[3].split(".").join(" ");
-                }
-            } else if (/([A-Za-z0-9- ]+?) - (\d+\W+?\d+\W+?\d+) - (.+?) - \[.+]/.test(file)) {
-                const match = file.match(/([A-Za-z0-9- ]+?) - (\d+\W+?\d+\W+?\d+) - (.+?) - \[.+]/);
-                if (match) {
-                    searchTerm = match[1] + " " + match[3].split(".").join(" ");
-                }
-            } else if (/([A-Za-z0-9- ]+?) - (\d+\W+?\d+\W+?\d+) - (.+?) \[(.+?)]/.test(file)) {
-                const match = file.match(/([A-Za-z0-9- ]+?) - (\d+\W+?\d+\W+?\d+) - (.+?) \[(.+?)]/);
-                if (match) {
-                    searchTerm = match[1] + " " + match[3].split(".").join(" ") + " " + match[4].split(", ").join(" ");
-                }
-            } else {
-                cli.warn("Couldn't parse file: " + file);
-                continue;
-            }
+            // if (pathInfo.dir !== dir) {
+            //     let folderName = pathInfo.dir;
+            //     searchTerm = folderName.replace(dir, "").replace("\\", "");
+            // }
+
 
             if (searchTerm === "") {
                 continue;
@@ -97,7 +80,7 @@ class PornRenamer {
 
             let rsp = await this.searchApi(searchTerm);
             if (!rsp.length) {
-                cli.warn("No search results for " + file);
+                this.warn("No search results for " + file);
                 continue;
             }
 
@@ -116,6 +99,7 @@ class PornRenamer {
                     value: "_"
                 });
 
+                this.info(file);
                 let choice = await inquirer.prompt({
                     name: "scene",
                     message: "Multiple scenes found; Which one is correct?",
@@ -134,46 +118,90 @@ class PornRenamer {
 
             const scene = await this.getScene(uuid);
 
-            // const fileName = util.format(
-            //     "%s/%s - %s - %s [%s]",
-            //     scene.site.name,
-            //     scene.site.name,
-            //     scene.title,
-            //     scene.date,
-            //     scene.performers.map(i => i.name).join(", ")
-            // );
-
             const fileName = stringFormat(program.format, {
                 title: scene.title,
                 site: scene.site.name,
                 date: scene.date,
-                performers: scene.performers.map(i => i.name).join(', ')
+                performers: scene.performers.map(i => i.name).join(", ")
             });
 
-            cli.log("rename to " + path.join(dir, fileName) + path.extname(file));
+            const outputFolder = path.join(program.output, fileName);
+            const nfoFileName = outputFolder + ".nfo";
 
-            const nfoFileName = path.join(dir, fileName) + ".nfo";
-            const folder = path.dirname(nfoFileName);
+            if (!this.program.dry) {
+                await mkdirp(path.parse(outputFolder).dir);
+            }
 
-            mkdirp(folder);
-            fs.writeFile(path.join(dir, fileName) + ".nfo", await this.generateNfo(scene, program.kodi), () => {
-                cli.log("NFO Created");
-            });
+            if (this.program.nfo) {
+                if (!this.program.dry) {
+                    const nfoXml = await this.generateNfo(scene, program.kodi);
+                    await fs.writeFile(nfoFileName, nfoXml, () => {
+                    });
+                }
+            }
 
+
+            const newFileName = outputFolder + pathInfo.ext;
+
+            if (!this.program.dry) {
+                if (await fs.existsSync(newFileName)) {
+                    console.error(fs.statSync(newFileName));
+                    return;
+                } else {
+                    fs.rename(file, newFileName, (err) => {
+                        if (err) {
+                            this.error(err.message);
+                        } else {
+                            this.success("Renamed " + file + " -> " + newFileName);
+                        }
+                    });
+                }
+            } else {
+                this.success("Renamed " + file + " -> " + newFileName);
+            }
+
+            if (this.program.thumbnail) {
+                if (!this.program.dry) {
+                    if (scene.background.large) {
+                        const thumbnailName = path.parse(nfoFileName).dir + "/thumb.jpg";
+
+                        if (!fs.existsSync(thumbnailName)) {
+                            const thumbnailFile = await fs.createWriteStream(thumbnailName);
+                            https.get(scene.background.large, function (response) {
+                                response.pipe(thumbnailFile);
+                            });
+                        }
+                    }
+
+                    if (scene.poster) {
+                        const posterName = path.parse(nfoFileName).dir + "/poster.jpg";
+                        if (!fs.existsSync(posterName)) {
+                            const posterFile = await fs.createWriteStream(posterName);
+                            https.get(scene.poster, function (response) {
+                                response.pipe(posterFile);
+                            });
+                        }
+                    }
+                }
+            }
+
+            progressBar.increment(1, {file})
         }
 
+        progressBar.stop()
     }
 
     /**
      * @param search
      */
     async searchApi(search: string): Promise<Array<Scene>> {
-        let rsp = await axios.get("https://metadataapi.net/api/scenes?q=" + search);
+        search = encodeURI(search);
+        let rsp = await axios.get(API_URL + "/api/scenes?parse=" + search);
         return rsp.data.data;
     }
 
     async getScene(uuid: string): Promise<Scene> {
-        let rsp = await axios.get("https://metadataapi.net/api/scenes/" + uuid);
+        let rsp = await axios.get(API_URL + "/api/scenes/" + uuid);
 
         return rsp.data.data;
     }
@@ -184,23 +212,21 @@ class PornRenamer {
         if (kodi) {
             obj = {
                 movie: {
-                    title: scene.title,
+                    title: scene.site.name + ": " + scene.title,
                     studio: scene.site.name,
                     plot: scene.description,
                     premiered: scene.date,
-                    thumb: [
+                    thumb: scene.poster,
+                    fanart: [
                         {
-                            "#text": scene.background.large,
-                            "@aspect": "landscape"
-                        },
-                        {
-                            "#text": scene.poster,
-                            "@aspect": "poster"
+                            thumb: {
+                                "#text": scene.background.large,
+                                "@aspect": "landscape"
+                            }
                         }
                     ],
-
                     poster: scene.poster,
-                    performer: scene.performers.map(i => {
+                    actor: scene.performers.map(i => {
                         return {
                             name: i.name,
                             thumb: i.image,
@@ -244,14 +270,17 @@ class PornRenamer {
 }
 
 let command = program
-    .version("0.0.1")
+    .version(version)
     .requiredOption("-d, --directory <directory>", "Directory to scan for files", process.cwd())
-    .option("-k, --kodi", "Outputs the NFO using Kodi Movie standard", false)
-    .option("-f, --format <format>", "The format of the filenames", "{site} - {title} - {date} [{performers}]")
+    .option("-k, --kodi", "Outputs the NFO using Kodi Movie standard", true)
+    .option("-n, --nfo", "Create an NFO alongside the video", true)
+    .option("-r, --dry", "Don't actually rename any files or make any changes", false)
+    .option("-t, --thumbnail", "Save the thumbnail along with the image", true)
+    .option("-f, --format <format>", "The format of the filenames", "{site} - {date} - {title}/{site} - {date} - {title} [{performers}]")
+    .option("-o, --output <output>", "The folder where we move the folders to", path.join(process.cwd(), "output"))
     .parse(process.argv);
 
 //console.log(command);
 
 let pr = new PornRenamer(command);
 pr.run();
-
