@@ -2,31 +2,36 @@ porn-renamer
 ============
 
 A cli to rename your porn files using http://metadataapi.net
-
-[![oclif](https://img.shields.io/badge/cli-oclif-brightgreen.svg)](https://oclif.io)
-[![Version](https://img.shields.io/npm/v/porn-renamer.svg)](https://npmjs.org/package/porn-renamer)
-[![Downloads/week](https://img.shields.io/npm/dw/porn-renamer.svg)](https://npmjs.org/package/porn-renamer)
-[![License](https://img.shields.io/npm/l/porn-renamer.svg)](https://github.com/theporndb/renamer/blob/master/package.json)
-
-<!-- toc -->
-* [Usage](#usage)
-* [Commands](#commands)
-<!-- tocstop -->
-# Usage
-<!-- usage -->
-```sh-session
-$ npm install -g porn-renamer
-$ porn-renamer COMMAND
-running command...
-$ porn-renamer (-v|--version|version)
-porn-renamer/0.0.1 win32-x64 node-v13.2.0
-$ porn-renamer --help [COMMAND]
-USAGE
-  $ porn-renamer COMMAND
-...
-```
 <!-- usagestop -->
-# Commands
+# Usage
+Download the latest version https://github.com/ThePornDB/renamer/releases
+
+run the command to see options ./porn-renamer -h
+
+example: ./porn-renamer -d /mnt/nas/porn-downloads -o /mnt/nas/porn 
+
+This will search for files in the -d directory and move them to the -o directory
+
+You can also format how you want the filename to be named; Defaults to : `{site} - {date} - {title}/{site} - {date} - {title} [{performers}]`
+
+Use -r to do a Dry run first as this tool is destructive. To be even safer run it with the -l flag to hardlink everything.
+```
+Usage: ./porn-renamer [options]
+
+Options:
+  -V, --version                output the version number
+  -d, --directory <directory>  Directory to scan for files (default: "/root/porn-renamer/build")
+  -k, --kodi                   Outputs the NFO using Kodi Movie standard (default: true)
+  -n, --nfo                    Create an NFO alongside the video (default: true)
+  -r, --dry                    Don't actually rename any files or make any changes (default: false)
+  -t, --thumbnail              Save the thumbnail along with the image (default: true)
+  -f, --format <format>        The format of the filenames (default: "{site} - {date} - {title}/{site} - {date} - {title} [{performers}]")
+  -o, --output <output>        The folder where we move the folders to (default: "/root/porn-renamer/build/output")
+  -l, --hardlink               Hard links the file to the output instead of moving (default: false)
+  -h, --help                   output usage information
+```
+
 <!-- commands -->
 
 <!-- commandsstop -->
+ 
