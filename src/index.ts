@@ -12,10 +12,12 @@ const fs = require("fs");
 const mkdirp = require("mkdirp");
 const stringFormat = require("string-template");
 const clc = require("cli-color");
+const sanitize = require("sanitize-filename");
+
 import {Scene} from "./types";
 
 
-const API_URL = "https://metadataapi.net";
+const API_URL = "https://master.metadataapi.net";
 
 class PornRenamer {
     private program: any;
@@ -44,6 +46,8 @@ class PornRenamer {
         const dir = this.program.directory;
         const files: Array<string> = [];
 
+        console.log(this.program)
+
         cli.action.start("Scanning Folders");
 
         await walk(dir, [".mkv", ".avi", ".wmv", ".mp4"], async (file: string) => {
@@ -59,8 +63,8 @@ class PornRenamer {
             return;
         }
 
-        const progressBar = cli.progress();
-        progressBar.start(files.length, 0);
+        //const progressBar = cli.progress();
+        //progressBar.start(files.length, 0);
 
         for (const file of files) {
 
@@ -134,9 +138,13 @@ class PornRenamer {
 
             if (this.program.nfo) {
                 if (!this.program.dry) {
-                    const nfoXml = await this.generateNfo(scene, program.kodi);
-                    await fs.writeFile(nfoFileName, nfoXml, () => {
-                    });
+                    const nfoXml = this.generateNfo(scene, program.kodi);
+                    try {
+                        fs.writeFileSync(nfoFileName, nfoXml);
+                    } catch (e) {
+                        this.warn(e.message);
+                        this.warn("Couldn't create NFO");
+                    }
                 }
             }
 
@@ -145,16 +153,17 @@ class PornRenamer {
 
             if (!this.program.dry) {
                 if (await fs.existsSync(newFileName)) {
-                    console.error(fs.statSync(newFileName));
-                    return;
+                    const oldFileStats = fs.statSync(newFileName);
+                    const newFileStats = fs.statSync(file);
+                    if (newFileStats.size > oldFileStats.size) {
+                        this.renameMediaFile(file, newFileName);
+                    } else {
+                        //progressBar.increment(1, {file});
+                        this.warn("Same file already exists: " + path.parse(newFileName).name);
+                        continue;
+                    }
                 } else {
-                    fs.rename(file, newFileName, (err) => {
-                        if (err) {
-                            this.error(err.message);
-                        } else {
-                            this.success("Renamed " + file + " -> " + newFileName);
-                        }
-                    });
+                    this.renameMediaFile(file, newFileName);
                 }
             } else {
                 this.success("Renamed " + file + " -> " + newFileName);
@@ -162,40 +171,76 @@ class PornRenamer {
 
             if (this.program.thumbnail) {
                 if (!this.program.dry) {
-                    if (scene.background.large) {
-                        const thumbnailName = path.parse(nfoFileName).dir + "/thumb.jpg";
+                    try {
+                        if (scene.background.large) {
+                            const thumbnailName = path.parse(nfoFileName).dir + "/thumb.jpg";
 
-                        if (!fs.existsSync(thumbnailName)) {
-                            const thumbnailFile = await fs.createWriteStream(thumbnailName);
-                            https.get(scene.background.large, function (response) {
-                                response.pipe(thumbnailFile);
-                            });
+                            if (!fs.existsSync(thumbnailName)) {
+                                this.download(scene.poster, thumbnailName);
+                                // const thumbnailFile = fs.createWriteStream(thumbnailName);
+                                // thumbnailFile.on("open", () => {
+                                //     https.get(scene.background.large, (response) => {
+                                //         response.pipe(thumbnailFile);
+                                //     });
+                                // });
+                            }
                         }
+                    } catch (e) {
+                        this.warn("Error creating thumbnail");
                     }
 
-                    if (scene.poster) {
-                        const posterName = path.parse(nfoFileName).dir + "/poster.jpg";
-                        if (!fs.existsSync(posterName)) {
-                            const posterFile = await fs.createWriteStream(posterName);
-                            https.get(scene.poster, function (response) {
-                                response.pipe(posterFile);
-                            });
+
+                    try {
+                        if (scene.poster) {
+                            const posterName = path.parse(nfoFileName).dir + "/poster.jpg";
+                            if (!fs.existsSync(posterName)) {
+                                this.download(scene.poster, posterName);
+                            }
                         }
+                    } catch (e) {
+                        this.warn("Error creating poster");
                     }
                 }
             }
 
-            progressBar.increment(1, {file})
+            //progressBar.increment(1, {file});
         }
 
-        progressBar.stop()
+        //progressBar.stop();
     }
+
+    download(url, dest) {
+        return new Promise((resolve, reject) => {
+            https.get(url, (res) => {
+                if (res.statusCode !== 200) {
+                    let err = new Error("File couldn't be retrieved");
+                    return reject(err);
+                }
+                var chunks = [];
+                res.setEncoding("binary");
+                res.on("data", (chunk) => {
+                    chunks += chunk;
+                }).on("end", () => {
+                    const stream = fs.createWriteStream(dest);
+                    stream.write(chunks, "binary");
+                    stream.on("finish", () => {
+                        resolve("File Saved !");
+                    });
+                    res.pipe(stream);
+                });
+            }).on("error", (e) => {
+                console.log("Error: " + e);
+                reject(e.message);
+            });
+        });
+    };
 
     /**
      * @param search
      */
     async searchApi(search: string): Promise<Array<Scene>> {
-        search = encodeURI(search);
+        search = encodeURI(search.replace('&', ''));
+        this.info(API_URL + "/api/scenes?parse=" + search)
         let rsp = await axios.get(API_URL + "/api/scenes?parse=" + search);
         return rsp.data.data;
     }
@@ -206,7 +251,27 @@ class PornRenamer {
         return rsp.data.data;
     }
 
-    async generateNfo(scene: Scene, kodi: boolean = false): Promise<string> {
+    renameMediaFile(file, newFileName) {
+        if (!this.program.hardlink) {
+            fs.rename(file, newFileName, (err) => {
+                if (err) {
+                    this.error(err.message);
+                } else {
+                    this.success("Renamed " + file + " -> " + newFileName);
+                }
+            });
+        } else {
+            fs.link(file, newFileName, (err) => {
+                if (err) {
+                    this.error(err.message);
+                } else {
+                    this.success("Linked " + file + " -> " + newFileName);
+                }
+            });
+        }
+    }
+
+    generateNfo(scene: Scene, kodi: boolean = false): Promise<string> {
         let obj = {};
 
         if (kodi) {
@@ -278,6 +343,7 @@ let command = program
     .option("-t, --thumbnail", "Save the thumbnail along with the image", true)
     .option("-f, --format <format>", "The format of the filenames", "{site} - {date} - {title}/{site} - {date} - {title} [{performers}]")
     .option("-o, --output <output>", "The folder where we move the folders to", path.join(process.cwd(), "output"))
+    .option("-l, --hardlink", "Hard links the file to the output instead of moving", false)
     .parse(process.argv);
 
 //console.log(command);

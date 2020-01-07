@@ -11,6 +11,7 @@
     "commander": "^4.0.1",
     "inquirer": "^7.0.1",
     "pkg": "^4.4.2",
+    "sanitize-filename": "^1.6.3",
     "string-template": "^1.0.0",
     "tslib": "^1",
     "xmlbuilder": "^13.0.2"
